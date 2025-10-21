@@ -1,0 +1,20 @@
+[2025-10-21 20:51:51] === Deploy script started ===
+[2025-10-21 20:51:51] Collecting parameters from user...
+[2025-10-21 20:52:24] Repo URL: https://github.com/dejinassar/hng13-stage1-devops
+[2025-10-21 20:52:25] No PAT provided (assuming SSH key auth or public repo)
+[2025-10-21 20:52:26] Branch: main
+[2025-10-21 20:52:30] SSH user: ubuntu
+[2025-10-21 20:52:43] SSH host: 54.226.1.44
+[2025-10-21 20:52:55] SSH key path: /home/ibrocoded/Downloads/hng13-key.pem
+[2025-10-21 20:52:58] Application port: 5000
+[2025-10-21 20:52:58] ----- Configuration Summary -----
+[2025-10-21 20:52:58] Repository: https://github.com/dejinassar/hng13-stage1-devops
+[2025-10-21 20:52:58] Branch: main
+[2025-10-21 20:52:58] SSH: ubuntu@54.226.1.44
+[2025-10-21 20:52:58] SSH key: /home/ibrocoded/Downloads/hng13-key.pem
+[2025-10-21 20:52:58] App port: 5000
+[2025-10-21 20:52:58] Log file: deploy_20251021_205151.log
+[2025-10-21 20:52:58] ---------------------------------
+[2025-10-21 20:52:58] Step 1 complete: parameters collected and validated.
+[2025-10-21 20:52:58] === STEP 2: Cloning repository ===
+[2025-10-21 20:52:58] Repository already exists locally. Pulling latest changes...
