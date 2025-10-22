@@ -1,7 +1,0 @@
-[2025-10-21 20:48:47] === Deploy script started ===
-[2025-10-21 20:48:47] Collecting parameters from user...
-[2025-10-21 20:48:56] Repo URL: https://github.com/dejinassar/hng13-stage1-devops
-[2025-10-21 20:48:57] No PAT provided (assuming SSH key auth or public repo)
-[2025-10-21 20:49:16] Branch: main
-[2025-10-21 20:49:22] SSH user: ubuntu
-[2025-10-21 20:49:24] SSH host: 54.226.1.44
