@@ -13,7 +13,7 @@ This project automates the setup, deployment, and configuration of a Dockerized 
 
 ---
 
-## 🛠 Prerequisites
+##  Prerequisites
 - Remote Linux server (Ubuntu recommended)
 - SSH access with private key
 - Git installed locally
@@ -22,7 +22,7 @@ This project automates the setup, deployment, and configuration of a Dockerized 
 
 ---
 
-## ⚡ Usage
+##  Usage
 
 1. Make the script executable:
 ```bash
