@@ -1,134 +1,108 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
+set -e
+trap 'echo "[ERROR] Something went wrong. Exiting..."; exit 1;' ERR
 
-# ---------- LOGGING ----------
-_timestamp() { date +"%Y%m%d_%H%M%S"; }
-LOGFILE="deploy_$(_timestamp).log"
-log() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOGFILE"; }
-err_exit() { echo "ERROR: $*" | tee -a "$LOGFILE" >&2; exit "${2:-1}"; }
-trap 'err_exit "Unexpected error occurred. Check $LOGFILE for details."' ERR
-
-log "=== Deploy script started ==="
-
-# ---------- HELPERS ----------
-is_valid_url() { case "$1" in http*://*|git@*|ssh://*|*github.com*) return 0 ;; *) return 1 ;; esac; }
-is_number() { case "$1" in ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac; }
-file_exists_readable() { [ -f "$1" ] && [ -r "$1" ]; }
-
-prompt() {
-  local varname="$1"; shift
-  printf "%s: " "$*" >&2
-  read -r val
-  eval "$varname=\"\$val\""
+# -------------------------------
+# Logging function
+# -------------------------------
+log() {
+    echo "[INFO] $(date '+%Y-%m-%d %H:%M:%S') - $1"
 }
 
-# ---------- STEP 1: INPUTS ----------
-log "STEP 1: Collecting parameters from user..."
-prompt GIT_REPO_URL "Git repository URL (HTTPS or SSH)"
-is_valid_url "$GIT_REPO_URL" || err_exit "Invalid Git repository URL"
+# -------------------------------
+# User input
+# -------------------------------
+read -p "Enter Git repository URL: " GIT_REPO
+read -p "Enter Personal Access Token (if any, leave blank otherwise): " GIT_TOKEN
+read -p "Enter SSH user: " SSH_USER
+read -p "Enter SSH host: " SSH_HOST
+read -p "Enter SSH port (default 22): " SSH_PORT
+SSH_PORT=${SSH_PORT:-22}
+read -p "Enter application port: " APP_PORT
+APP_PORT=${APP_PORT:-5000}
 
-prompt GIT_PAT "Personal Access Token (optional, press Enter to skip)"
-prompt BRANCH "Branch name (default: main)"; : "${BRANCH:=main}"
-prompt SSH_USER "Remote SSH username"
-prompt SSH_HOST "Remote server IP/hostname"
-prompt SSH_KEY_PATH "Path to SSH private key (default: ~/.ssh/id_rsa)"; : "${SSH_KEY_PATH:=$HOME/.ssh/id_rsa}"
-prompt APP_PORT "Application port (default: 5000)"; : "${APP_PORT:=5000}"
-is_number "$APP_PORT" || err_exit "Application port must be a number"
+# -------------------------------
+# Basic validation
+# -------------------------------
+[[ -z "$GIT_REPO" ]] && { echo "[ERROR] Git repository URL is required"; exit 1; }
+[[ -z "$SSH_USER" || -z "$SSH_HOST" ]] && { echo "[ERROR] SSH details required"; exit 1; }
 
-SSH_KEY_PATH="${SSH_KEY_PATH/#\~/$HOME}"
-file_exists_readable "$SSH_KEY_PATH" || err_exit "SSH key not found at $SSH_KEY_PATH"
-log "STEP 1 complete: parameters collected"
+# -------------------------------
+# SSH connectivity check
+# -------------------------------
+log "Checking SSH connectivity..."
+ssh -o BatchMode=yes -o ConnectTimeout=5 -p $SSH_PORT $SSH_USER@$SSH_HOST "echo 'SSH Connection Successful'" || { echo "[ERROR] SSH Failed"; exit 1; }
 
-# ---------- STEP 2: CLONE REPO ----------
-REPO_NAME=$(basename -s .git "$GIT_REPO_URL")
-if [ -d "$REPO_NAME" ]; then
-    log "Repository exists locally. Pulling latest changes..."
-    cd "$REPO_NAME" || err_exit "Cannot cd into repo"
-    git fetch origin "$BRANCH"
-    git reset --hard "origin/$BRANCH"
-else
-    log "Cloning repository..."
-    if [ -n "$GIT_PAT" ]; then
-        AUTH_URL="${GIT_REPO_URL/https:\/\//https:\/\/${GIT_PAT}@}"
-        git clone -b "$BRANCH" "$AUTH_URL" || err_exit "Git clone failed"
-    else
-        git clone -b "$BRANCH" "$GIT_REPO_URL" || err_exit "Git clone failed"
-    fi
-    cd "$REPO_NAME" || err_exit "Cannot cd into repo"
-fi
-[ -f "Dockerfile" ] || [ -f "docker-compose.yml" ] || err_exit "No Dockerfile or docker-compose.yml found"
-log "STEP 2 complete: repository ready"
-
-# ---------- STEP 3: SSH TEST ----------
-SSH_TARGET="${SSH_USER}@${SSH_HOST}"
-log "STEP 3: Testing SSH connectivity..."
-ssh -i "$SSH_KEY_PATH" -o BatchMode=yes -o ConnectTimeout=10 "$SSH_TARGET" "echo SSH_OK" >>"$LOGFILE" 2>&1 || \
-  err_exit "SSH connection failed"
-log "STEP 3 complete: SSH verified"
-
-# ---------- STEP 4: REMOTE SETUP ----------
-log "STEP 4: Preparing remote server..."
-ssh -i "$SSH_KEY_PATH" "$SSH_TARGET" bash <<'EOF' >>"$LOGFILE" 2>&1
+# -------------------------------
+# Server preparation
+# -------------------------------
+log "Preparing server (update + install Docker + Nginx)..."
+ssh -p $SSH_PORT $SSH_USER@$SSH_HOST << 'EOF'
 sudo apt update -y
 sudo apt install -y docker.io docker-compose nginx
-sudo usermod -aG docker $USER
-sudo systemctl enable --now docker
-sudo systemctl enable --now nginx
+sudo systemctl enable docker
+sudo systemctl start docker
+sudo systemctl enable nginx
+sudo systemctl start nginx
 EOF
-log "STEP 4 complete: remote server ready"
 
-# ---------- STEP 5: DEPLOY APP ----------
-log "STEP 5: Deploying Dockerized application..."
-ssh -i "$SSH_KEY_PATH" "$SSH_TARGET" "rm -rf ~/app && mkdir -p ~/app"
-scp -i "$SSH_KEY_PATH" -r ./* "$SSH_TARGET:~/app/"
+# -------------------------------
+# Clone or update repo
+# -------------------------------
+APP_DIR="~/app_deploy"
+log "Cloning or updating repository..."
+ssh -p $SSH_PORT $SSH_USER@$SSH_HOST << EOF
+if [ -d "$APP_DIR" ]; then
+    cd $APP_DIR
+    git reset --hard
+    git pull
+else
+    git clone $GIT_REPO $APP_DIR
+fi
+EOF
 
-ssh -i "$SSH_KEY_PATH" "$SSH_TARGET" bash <<EOF >>"$LOGFILE" 2>&1
-cd ~/app
+# -------------------------------
+# Docker deployment
+# -------------------------------
+log "Building and running Docker container..."
+ssh -p $SSH_PORT $SSH_USER@$SSH_HOST << EOF
+cd $APP_DIR
+docker build -t myapp:latest .
 docker stop myapp || true
 docker rm myapp || true
-docker build -t myapp .
-docker run -d -p ${APP_PORT}:${APP_PORT} --name myapp myapp
+docker run -d --name myapp -p $APP_PORT:5000 myapp:latest
 EOF
-log "STEP 5 complete: Docker app deployed"
 
-# ---------- STEP 6: NGINX CONFIG ----------
-log "STEP 6: Configuring Nginx reverse proxy..."
-ssh -i "$SSH_KEY_PATH" "$SSH_TARGET" bash >>"$LOGFILE" 2>&1 <<EOF
-cat > ~/myapp.nginx <<'NGINXCONF'
+# -------------------------------
+# Nginx configuration
+# -------------------------------
+log "Setting up Nginx reverse proxy..."
+ssh -p $SSH_PORT $SSH_USER@$SSH_HOST << EOF
+sudo tee /etc/nginx/sites-available/myapp << 'NGINXCONF'
 server {
     listen 80;
     server_name _;
+
     location / {
-        proxy_pass http://localhost:APP_PORT_PLACEHOLDER;
+        proxy_pass http://localhost:$APP_PORT;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 }
 NGINXCONF
-sed -i "s/APP_PORT_PLACEHOLDER/${APP_PORT}/g" ~/myapp.nginx
-sudo mv ~/myapp.nginx /etc/nginx/sites-available/myapp
+
 sudo ln -sf /etc/nginx/sites-available/myapp /etc/nginx/sites-enabled/
-sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t
-sudo systemctl restart nginx
-EOF
-log "STEP 6 complete: Nginx configured"
-
-# ---------- STEP 7: VALIDATION ----------
-log "STEP 7: Validating deployment..."
-ssh -i "$SSH_KEY_PATH" "$SSH_TARGET" bash <<EOF >>"$LOGFILE" 2>&1
-systemctl is-active --quiet docker && echo "Docker running"
-docker ps --filter "name=myapp" --format "{{.Names}}: {{.Status}}"
-curl -s --head http://localhost:${APP_PORT} | head -n 1
+sudo systemctl reload nginx
 EOF
 
-APP_URL="http://$SSH_HOST/"
-if curl -s --head "$APP_URL" | grep "200 OK" >/dev/null; then
-    log "Deployment successful! App accessible at $APP_URL"
-else
-    err_exit "Deployment validation failed at $APP_URL"
-fi
+# -------------------------------
+# Deployment validation
+# -------------------------------
+log "Validating deployment..."
+ssh -p $SSH_PORT $SSH_USER@$SSH_HOST << EOF
+docker ps | grep myapp || { echo "Docker container not running"; exit 1; }
+systemctl is-active nginx || { echo "Nginx not running"; exit 1; }
+EOF
 
-log "=== Deployment script finished successfully! ==="
+log "Deployment completed successfully!"
