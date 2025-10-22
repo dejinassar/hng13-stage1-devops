@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HNG13 DevOps {{ stage }}</title>
+  <title>HNG13 DevOps Stage {{ stage }}</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -28,9 +28,9 @@
 </head>
 <body>
   <div class="container">
-    <h1>Welcome to DevOps {{ stage }} - {{ dev_name }}</h1>
+    <h1>Welcome to DevOps Stage {{ stage }} - {{ name }}</h1>
     <p>Successfully deployed on AWS</p>
-    <p class="timestamp">Deployed: {{ deploy_date }}</p>
+    <p class="timestamp">Deployed: {{ deployment_date }}</p>
   </div>
 </body>
 </html>
