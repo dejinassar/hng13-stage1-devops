@@ -3,6 +3,12 @@ set -e
 trap 'echo "[ERROR] Something went wrong. Exiting..."; exit 1;' ERR
 
 # -------------------------------
+# SSH Key configuration
+# -------------------------------
+SSH_KEY=~/Downloads/hng13-key.pem
+chmod 600 $SSH_KEY
+
+# -------------------------------
 # Logging function
 # -------------------------------
 log() {
@@ -31,13 +37,13 @@ APP_PORT=${APP_PORT:-5000}
 # SSH connectivity check
 # -------------------------------
 log "Checking SSH connectivity..."
-ssh -o BatchMode=yes -o ConnectTimeout=5 -p $SSH_PORT $SSH_USER@$SSH_HOST "echo 'SSH Connection Successful'" || { echo "[ERROR] SSH Failed"; exit 1; }
+ssh -i $SSH_KEY -o BatchMode=yes -o ConnectTimeout=5 -p $SSH_PORT $SSH_USER@$SSH_HOST "echo 'SSH Connection Successful'" || { echo "[ERROR] SSH Failed"; exit 1; }
 
 # -------------------------------
 # Server preparation
 # -------------------------------
 log "Preparing server (update + install Docker + Nginx)..."
-ssh -p $SSH_PORT $SSH_USER@$SSH_HOST << 'EOF'
+ssh -i $SSH_KEY -p $SSH_PORT $SSH_USER@$SSH_HOST << 'EOF'
 sudo apt update -y
 sudo apt install -y docker.io docker-compose nginx
 sudo systemctl enable docker
@@ -51,7 +57,7 @@ EOF
 # -------------------------------
 APP_DIR="~/app_deploy"
 log "Cloning or updating repository..."
-ssh -p $SSH_PORT $SSH_USER@$SSH_HOST << EOF
+ssh -i $SSH_KEY -p $SSH_PORT $SSH_USER@$SSH_HOST << EOF
 if [ -d "$APP_DIR" ]; then
     cd $APP_DIR
     git reset --hard
@@ -65,7 +71,7 @@ EOF
 # Docker deployment
 # -------------------------------
 log "Building and running Docker container..."
-ssh -p $SSH_PORT $SSH_USER@$SSH_HOST << EOF
+ssh -i $SSH_KEY -p $SSH_PORT $SSH_USER@$SSH_HOST << EOF
 cd $APP_DIR
 docker build -t myapp:latest .
 docker stop myapp || true
@@ -77,7 +83,7 @@ EOF
 # Nginx configuration
 # -------------------------------
 log "Setting up Nginx reverse proxy..."
-ssh -p $SSH_PORT $SSH_USER@$SSH_HOST << EOF
+ssh -i $SSH_KEY -p $SSH_PORT $SSH_USER@$SSH_HOST << EOF
 sudo tee /etc/nginx/sites-available/myapp << 'NGINXCONF'
 server {
     listen 80;
@@ -100,7 +106,7 @@ EOF
 # Deployment validation
 # -------------------------------
 log "Validating deployment..."
-ssh -p $SSH_PORT $SSH_USER@$SSH_HOST << EOF
+ssh -i $SSH_KEY -p $SSH_PORT $SSH_USER@$SSH_HOST << EOF
 docker ps | grep myapp || { echo "Docker container not running"; exit 1; }
 systemctl is-active nginx || { echo "Nginx not running"; exit 1; }
 EOF
